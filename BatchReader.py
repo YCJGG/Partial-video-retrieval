@@ -198,6 +198,8 @@ class DatasetReader2(data.Dataset):
 
       
         #print(data_f.shape)
+        #print(data.shape,filename)
+    
         data = data.transpose(3, 0, 1, 2)
       
         clip_frames = torch.from_numpy(data)

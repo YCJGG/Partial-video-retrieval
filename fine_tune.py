@@ -15,7 +15,7 @@ import time
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--batch_size', type = int, default= 2, help = "batch size")
+parser.add_argument('--batch_size', type = int, default= 1, help = "batch size")
 parser.add_argument('--g_input_size', type = int, default= 4096+51, help = "input size of generator")
 parser.add_argument('--g_hidden_size', type = int, default= 4096*2, help = "hidden size of generator")
 parser.add_argument('--g_output_size', type = int, default= 4096, help = "output size of generator")
@@ -46,8 +46,8 @@ def EncodingOnehot(target, nclasses):
 
 
 #dataloader
-TRAIN_DIR = './list/train.list'
-TEST_DIR = './list/test.list'
+TRAIN_DIR = './TrainSplit1.txt'
+TEST_DIR = './TestSplit1.txt'
 nclasses = 51
 
 
@@ -56,8 +56,8 @@ test_data = DatasetReader(TEST_DIR)
 
 num_train, num_test = len(train_data) , len(test_data)
 
-train_loader = DataLoader(train_data,batch_size = opt.batch_size, shuffle = True, num_workers = 4)
-test_loader = DataLoader(test_data,batch_size = opt.batch_size, shuffle = False, num_workers = 4)
+train_loader = DataLoader(train_data,batch_size = opt.batch_size, shuffle = True, num_workers = 1)
+test_loader = DataLoader(test_data,batch_size = opt.batch_size, shuffle = False, num_workers = 1)
 
 
 train_labels = LoadLabel(TRAIN_DIR)
@@ -67,13 +67,13 @@ test_labels_onehot = EncodingOnehot(test_labels, nclasses)
 Y = train_labels_onehot
 
 
-# c3d = networks.C3D()
-# c3d_dict = c3d.state_dict()
-# pretrained_dict = torch.load('./c3d.pickle')
-# pretrained_dict = {k : v for k, v in pretrained_dict.items() if  k in c3d_dict}
-# c3d_dict.update(pretrained_dict)
-# c3d.load_state_dict(c3d_dict)
-# c3d.fc8 = nn.Linear(4096,51)
+c3d = networks.C3D()
+c3d_dict = c3d.state_dict()
+pretrained_dict = torch.load('./c3d.pickle')
+pretrained_dict = {k : v for k, v in pretrained_dict.items() if  k in c3d_dict}
+c3d_dict.update(pretrained_dict)
+c3d.load_state_dict(c3d_dict)
+c3d.fc8 = nn.Linear(4096,51)
 
 # c3d = networks.C3D()
 # c3d.fc8 = nn.Linear(4096,51)
@@ -86,13 +86,13 @@ Y = train_labels_onehot
 # c3d_dict.update(pretrained_dict)
 # #print(c3d.state_dict().keys())
 # c3d.load_state_dict(c3d_dict)
-c3d = torch.load('./checkpoints/3e-05-0.70317models.pt')
+#c3d = torch.load('./checkpoints/3e-05-0.70317models.pt')
 
 
-#c3d = nn.DataParallel(c3d)
+c3d = nn.DataParallel(c3d)
 c3d.cuda()
 
-#loss 
+#loss
 criterionGAN = GANLoss()
 criterionL1 = nn.L1Loss()
 criterion = nn.CrossEntropyLoss().cuda()
@@ -120,45 +120,45 @@ for epoch in range(opt.train_epoch):
     scheduler.step()
     s_time = time.time()
     #F step
-    # for iteration, batch in enumerate(train_loader, 0):
-    #     c3d.train()
-    #     frame_clip = batch[0]
-    #     #pf = batch[1]
-    #     label_ = batch[1]
-    #     batch_ind = batch[2]
-       
-    #     # train the c3d net
-    #     frame_clip = Variable(frame_clip.cuda())
-    #     label_onehot = EncodingOnehot(label_, nclasses)
-    #     #print(label)
-    #     label_onehot = Variable(label_onehot.cuda())
-    #     label_onehot = torch.unsqueeze(label_onehot,1)
-    #     label = label_.view(-1)
-    #     label = Variable(label.cuda())
-    #     c3d_optimizer.zero_grad()
-    #     logits,_ = c3d(frame_clip)
+    for iteration, batch in enumerate(train_loader, 0):
+        c3d.train()
+        frame_clip = batch[0]
+        #pf = batch[1]
+        label_ = batch[1]
+        batch_ind = batch[2]
 
-    #     _,  preds = torch.max(logits.data, 1)
+        # train the c3d net
+        frame_clip = Variable(frame_clip.cuda())
+        label_onehot = EncodingOnehot(label_, nclasses)
+        #print(label)
+        label_onehot = Variable(label_onehot.cuda())
+        label_onehot = torch.unsqueeze(label_onehot,1)
+        label = label_.view(-1)
+        label = Variable(label.cuda())
+        c3d_optimizer.zero_grad()
+        logits,_ = c3d(frame_clip)
 
-    #     loss = criterion(logits, label)
-    #     loss.backward()
-    #     c3d_optimizer.step()
+        _,  preds = torch.max(logits.data, 1)
 
-    #     running_loss += loss.item()
-    #     running_corrects += torch.sum(preds == label.data)
-    #     itr +=1 
-        
-    
-    # epoch_loss = running_loss / ((num_train+0.0)/opt.batch_size)
-    # running_corrects = running_corrects.cpu().numpy()
-    # epoch_acc = (running_corrects+0.0) / (num_train+0.0)
-    
-    # epoch_loss = round(epoch_loss,5)
-    # epoch_acc = round(epoch_acc,5)
+        loss = criterion(logits, label)
+        loss.backward()
+        c3d_optimizer.step()
 
-    # print('{}, {} Loss: {:.4f} Acc: {:.4f}'.format(epoch, 'train', epoch_loss, epoch_acc))
-    
-    # #s_time = time.time()
+        running_loss += loss.item()
+        running_corrects += torch.sum(preds == label.data)
+        itr +=1
+
+
+    epoch_loss = running_loss / ((num_train+0.0)/opt.batch_size)
+    running_corrects = running_corrects.cpu().numpy()
+    epoch_acc = (running_corrects+0.0) / (num_train+0.0)
+
+    epoch_loss = round(epoch_loss,5)
+    epoch_acc = round(epoch_acc,5)
+
+    print('{}, {} Loss: {:.4f} Acc: {:.4f}'.format(epoch, 'train', epoch_loss, epoch_acc))
+
+    #s_time = time.time()
     c3d.eval()
     running_loss = 0.0
     running_corrects = 0.0
@@ -183,8 +183,8 @@ for epoch in range(opt.train_epoch):
 
         running_loss += loss.item()
         running_corrects += torch.sum(preds == label.data)
-        
-    running_corrects = running_corrects.cpu().numpy() 
+
+    running_corrects = running_corrects.cpu().numpy()
     epoch_loss = running_loss / (num_test/opt.batch_size)
     epoch_acc = running_corrects / (num_test+0.0)
     epoch_loss = round(epoch_loss,5)
