@@ -1,0 +1,6 @@
+nohup: ignoring input
+###training start~~~~
+Traceback (most recent call last):
+  File "hash_train.py", line 135, in <module>
+    E = temp1.mm(B)
+RuntimeError: size mismatch, m1: [51 x 58140], m2: [35700 x 64] at /pytorch/aten/src/TH/generic/THTensorMath.c:2033

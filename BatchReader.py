@@ -13,11 +13,12 @@ class DatasetProcessing(data.Dataset):
         #self.feature_path = data_path
         ffp = open(data_path,'r')
         fp = list(ffp)
-        self.fullfeature_path = [x.strip().split(' ')[0] for x in fp]
-        self.partialfeature_path = [x.strip().split(' ')[1] for x in fp]
-        self.labels = [int(x.strip().split(' ')[2]) for x in fp]
+        self.fullfeature_path = [x.strip().split(' ')[0].replace('HMDB51','full_features')+'.npy'  for x in fp]
+
+        self.partialfeature_path = [x.strip().split(' ')[0].replace('HMDB51','partial_features')+'.npy' for x in fp]
+        self.labels = [int(x.strip().split(' ')[1]) for x in fp]
         ffp.close()
-        
+
     def __getitem__(self, index):
         ff = np.load(self.fullfeature_path[index])
         pf = np.load(self.partialfeature_path[index])
@@ -27,73 +28,108 @@ class DatasetProcessing(data.Dataset):
         return len(self.fullfeature_path)
 #DatasetProcessing('test.list')
 
+class DatasetProcessing2(data.Dataset):
+    def __init__(self, data_path):
+        #self.feature_path = data_path
+        ffp = open(data_path,'r')
+        fp = list(ffp)
+        self.fullfeature_path = [x.strip().split(' ')[0]  for x in fp]
+
+        self.partialfeature_path = [x.strip().split(' ')[1]for x in fp]
+        self.labels = [int(x.strip().split(' ')[2]) for x in fp]
+        ffp.close()
+
+    def __getitem__(self, index):
+        ff = np.load(self.fullfeature_path[index])
+        pf = np.load(self.partialfeature_path[index])
+        label = torch.LongTensor([self.labels[index]])
+        return ff, pf, label, index
+    def __len__(self):
+        return len(self.fullfeature_path)
+
+
+
 class DatasetReader(data.Dataset):
     def __init__(self, data_path):
         liness = open(data_path,'r')
         lines = list(liness)
+        
         self.video_path = [x.strip().split(' ')[0] for x in lines]
+    
         self.labels = [int(x.strip().split(' ')[1]) for x in lines]
         liness.close()
 
         self.num_frames_per_clip = 16
         self.crop_size = 112
         self.np_mean = np.load('crop_mean.npy').reshape([self.num_frames_per_clip, self.crop_size, self.crop_size, 3])
-    
+
 
     def __getitem__(self,index):
         filename = self.video_path[index]
-        tmp_data = []
+        tmp_data_p = []
         tmp_data_f = []
         s_index = 0
         s_index_f  = 0
+        k = 0
+        #print(filename)
         for parent, dirnames, filenames in os.walk(filename):
             if(len(filenames)<self.num_frames_per_clip):
                 return [], s_index
             filenames = sorted(filenames)
-            s_index = random.randint(0, len(filenames) - self.num_frames_per_clip)
-            for i in range(s_index, s_index + self.num_frames_per_clip):
-                image_name = str(filename) + '/' + str(filenames[i])
-                #print(image_name)
-                img = Image.open(image_name)
-                img_data = np.array(img)
-                tmp_data.append(img_data)
+            
+            while(k < 10):
+                tmp_data = []    
+                s_index = random.randint(0, len(filenames) - self.num_frames_per_clip)
+                for i in range(s_index, s_index + self.num_frames_per_clip):
+                    image_name = str(filename) + '/' + str(filenames[i])
+                    #print(image_name)
+                    img = Image.open(image_name)
+                    img_data = np.array(img)
+                    tmp_data.append(img_data)
+            
+                tmp_data_p.append(tmp_data)
+                k+=1
             if self.num_frames_per_clip == 1:
                 while (len(ret_arr) < 16):
                     tmp_data.append(img_data)
             while(s_index_f+self.num_frames_per_clip<=len(filenames)):
                 arr = []
                 for i in range(s_index, s_index + self.num_frames_per_clip):
-                
+
                     image_name = str(filename) + '/' + str(filenames[i])
                     img = Image.open(image_name)
                     img_data = np.array(img)
                     arr.append(img_data)
                 tmp_data_f.append(arr)
                 s_index_f += 8
-            
+
 
 
         #print(type(filenames))
         #tmp_data, _ = self.get_frames_data(filenames)
+        #print(len(tmp_data_p))
         img_datas = [];
-        
+        data_p = []
         #print(len(tmp_data))
-        if(len(tmp_data)!=0):
-            for j in xrange(len(tmp_data)):
-                img = Image.fromarray(tmp_data[j].astype(np.uint8))
-                
-                if(img.width>img.height):
-                    scale = float(self.crop_size)/float(img.height)
-                    img = np.array(cv2.resize(np.array(img),(int(img.width * scale + 1), self.crop_size))).astype(np.float32)
-                    
-                else:
-                    scale = float(self.crop_size)/float(img.width)
-                    img = np.array(cv2.resize(np.array(img),(self.crop_size, int(img.height * scale + 1)))).astype(np.float32)
-                crop_x = int((img.shape[0] - self.crop_size)/2)
-                crop_y = int((img.shape[1] - self.crop_size)/2)
-                img = img[crop_x:crop_x+self.crop_size, crop_y:crop_y+self.crop_size,:] - self.np_mean[j]
-                img_datas.append(img)
-        
+        if(len(tmp_data_p)!=0):
+           for i in xrange(len(tmp_data_p)):
+                imgs_datas_p = []
+                for j in xrange(len(tmp_data_p[i])):
+                    img = Image.fromarray(tmp_data_p[i][j].astype(np.uint8))
+
+                    if(img.width>img.height):
+                        scale = float(self.crop_size)/float(img.height)
+                        img = np.array(cv2.resize(np.array(img),(int(img.width * scale + 1), self.crop_size))).astype(np.float32)
+
+                    else:
+                        scale = float(self.crop_size)/float(img.width)
+                        img = np.array(cv2.resize(np.array(img),(self.crop_size, int(img.height * scale + 1)))).astype(np.float32)
+                    crop_x = int((img.shape[0] - self.crop_size)/2)
+                    crop_y = int((img.shape[1] - self.crop_size)/2)
+                    img = img[crop_x:crop_x+self.crop_size, crop_y:crop_y+self.crop_size,:] - self.np_mean[j]
+                    imgs_datas_p.append(img)
+                data_p.append(imgs_datas_p)
+
         data_f = []
 
         if(len(tmp_data_f)!=0):
@@ -101,11 +137,11 @@ class DatasetReader(data.Dataset):
                 imgs_datas_f = []
                 for j in xrange(len(tmp_data_f[i])):
                     img = Image.fromarray(tmp_data_f[i][j].astype(np.uint8))
-                    
+
                     if(img.width>img.height):
                         scale = float(self.crop_size)/float(img.height)
                         img = np.array(cv2.resize(np.array(img),(int(img.width * scale + 1), self.crop_size))).astype(np.float32)
-                        
+
                     else:
                         scale = float(self.crop_size)/float(img.width)
                         img = np.array(cv2.resize(np.array(img),(self.crop_size, int(img.height * scale + 1)))).astype(np.float32)
@@ -116,17 +152,19 @@ class DatasetReader(data.Dataset):
                 data_f.append(imgs_datas_f)
 
 
-        
+
         label = torch.LongTensor([self.labels[index]])
 
-        data = np.array(img_datas).astype(np.float32)
+        data_p = np.array(data_p).astype(np.float32)
 
         data_f = np.array(data_f).astype(np.float32)
-        #print(data_f.shape)
-        data = data.transpose(3, 0, 1, 2)
-        data_f = data_f.transpose(0,4,1,2,3)
         
-        clip_frames = torch.from_numpy(data)
+        data_p = data_p.squeeze()
+        data_p = data_p.transpose(0,4,1,2,3)
+        
+        data_f = data_f.transpose(0,4,1,2,3)
+
+        clip_frames = torch.from_numpy(data_p)
         all_frame = torch.from_numpy(data_f)
 
         return clip_frames, label, index, all_frame, filename
@@ -148,7 +186,7 @@ class DatasetReader2(data.Dataset):
         self.num_frames_per_clip = 16
         self.crop_size = 112
         self.np_mean = np.load('crop_mean.npy').reshape([self.num_frames_per_clip, self.crop_size, self.crop_size, 3])
-    
+
 
     def __getitem__(self,index):
         filename = self.video_path[index]
@@ -174,16 +212,16 @@ class DatasetReader2(data.Dataset):
      #print(type(filenames))
         #tmp_data, _ = self.get_frames_data(filenames)
         img_datas = [];
-        
+
         #print(len(tmp_data))
         if(len(tmp_data)!=0):
             for j in xrange(len(tmp_data)):
                 img = Image.fromarray(tmp_data[j].astype(np.uint8))
-                
+
                 if(img.width>img.height):
                     scale = float(self.crop_size)/float(img.height)
                     img = np.array(cv2.resize(np.array(img),(int(img.width * scale + 1), self.crop_size))).astype(np.float32)
-                    
+
                 else:
                     scale = float(self.crop_size)/float(img.width)
                     img = np.array(cv2.resize(np.array(img),(self.crop_size, int(img.height * scale + 1)))).astype(np.float32)
@@ -191,23 +229,25 @@ class DatasetReader2(data.Dataset):
                 crop_y = int((img.shape[1] - self.crop_size)/2)
                 img = img[crop_x:crop_x+self.crop_size, crop_y:crop_y+self.crop_size,:] - self.np_mean[j]
                 img_datas.append(img)
-            
+
         label = torch.LongTensor([self.labels[index]])
 
         data = np.array(img_datas).astype(np.float32)
 
-      
+
         #print(data_f.shape)
         #print(data.shape,filename)
-    
+        #print(data.shape,filename)
         data = data.transpose(3, 0, 1, 2)
-      
+
+
         clip_frames = torch.from_numpy(data)
-    
+
 
         return clip_frames, label, index
 
     def __len__(self):
         return len(self.video_path)
-DatasetReader('./list/test.list')
+DatasetReader('./TrainSplit1.txt')
+
 

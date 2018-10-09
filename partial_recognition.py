@@ -4,12 +4,15 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
 import numpy as np
+from sklearn import neighbors
+from sklearn import svm
 
 def LoadLabel(filename):
     fp = open(filename,'r')
-    labels = [x.strip().split()[1] for x in fp]
+    labels = [x.strip().split()[2] for x in fp]
     fp.close()
-    return torch.LongTensor(list(map(int,labels)))
+    #return torch.LongTensor(list(map(int,labels)))
+    return list(map(int,labels))
 
 
 bit = 64
@@ -17,31 +20,59 @@ bit = 64
 
 # load training data
 train_data = np.load(str(bit)+'H_B.npy')
-train_label = LoadLabel('./list/train.list')
+train_label = LoadLabel('./feature_hmdb_TrainSplit1.list')
 
 #load test data
 test_data = np.load(str(bit)+'test.npy')
-test_label = LoadLabel('./list/test.list')
+test_label = LoadLabel('./feature_hmdb_TestSplit1.list')
+
+
+knn = neighbors.KNeighborsClassifier()
+#data = np.array(train_data)
+#print(train_data.shape)
+
+label = np.array(train_label)
+#print(label.shape)
+knn.fit(train_data, label)
+#print(label)
+clf = svm.SVC()
+clf.fit(train_data, label)
 
 
 
 
+
+t = 0.0
+for i, data in enumerate(test_data,0):
+    #print(data.reshape(1,-1))
+    predict = knn.predict(data.reshape(1,-1))
+    y_hat = clf.predict(data.reshape(1,-1))
+    # print(y_hat)
+    # print(test_label[i])
+    if y_hat == test_label[i]:
+        t+=1
+
+print(t / float(len(test_label)))
+
+train_label = torch.LongTensor(train_label)
+
+test_label = torch.LongTensor(test_label)
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.l1 = nn.Linear(bit, 51)
 
     def forward(self, x):
-      
+
         return F.log_softmax(self.l1(x))
         #return self.l5(x)
 
 model = Net()
 
-optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
+optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.8)
 
 def train(epoch):
-    bs = 128
+    bs = 256
     index = 0
     while (index<len(train_data)):
         start = index
@@ -103,7 +134,7 @@ def test():
         test_loss, correct, len(test_data),
         100.0 *float( correct) / float(len(test_data)+0.0)))
 
-for epoch in range(1,80):
+for epoch in range(1,160):
     train(epoch)
     test()
 

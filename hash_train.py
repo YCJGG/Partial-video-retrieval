@@ -1,5 +1,5 @@
 import torch
-from BatchReader import DatasetProcessing
+from BatchReader import DatasetProcessing2 as  DatasetProcessing
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
@@ -10,25 +10,31 @@ import networks
 from networks import GANLoss, Generator, Discriminator
 import torch.optim as optim
 import CalcHammingRanking as CalcHR
+from torch.optim import lr_scheduler
+from sklearn import neighbors
+from sklearn import svm
+import time
+import scipy.io as scio
 
+nclasses = 51
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type = int, default= 256, help = "batch size")
-parser.add_argument('--g_input_size', type = int, default= 4096+51, help = "input size of generator")
-parser.add_argument('--g_hidden_size', type = int, default= 4096*2, help = "hidden size of generator")
+parser.add_argument('--g_input_size', type = int, default= 4096, help = "input size of generator")
+parser.add_argument('--g_hidden_size', type = int, default= 4096, help = "hidden size of generator")
 parser.add_argument('--g_output_size', type = int, default= 4096, help = "output size of generator")
-parser.add_argument('--d_input_size', type = int, default= 4096+51, help = "input size of discriminator")
+parser.add_argument('--d_input_size', type = int, default= 4096, help = "input size of discriminator")
 parser.add_argument('--d_hidden_size', type = int, default= 1024, help = "hidden size of discriminator")
 parser.add_argument('--d_output_size', type = int, default= 64 , help = "output size of discriminator")
 parser.add_argument('--h_input_size', type = int, default= 4096, help = "input size of Hashnet")
-parser.add_argument('--h_hidden_size', type = int, default= 1024, help = "hidden size of Hashnet")
-parser.add_argument('--bit', type = int, default= 64 , help = "output size of Hashnet")
-parser.add_argument('--lrG', type = float, default = 1e-5, help = "learning rate of generator" )
+parser.add_argument('--h_hidden_size', type = int, default= 4096, help = "hidden size of Hashnet")
+parser.add_argument('--bit', type = int, default= 128 , help = "output size of Hashnet")
+parser.add_argument('--lrG', type = float, default = 3e-5, help = "learning rate of generator" )
 parser.add_argument('--lrD', type = float, default = 1e-5, help = "learning rate of discriminator" )
 parser.add_argument('--lrH', type = float, default = 1e-3, help = "learning rate of Hashnet" )
 parser.add_argument('--beta1', type = float, default = 0.5, help = "beta1 for Adam optimizer" )
 parser.add_argument('--beta2', type = float, default = 0.999, help = "beta2 for Adam optimizer" )
-parser.add_argument('--train_epoch', type = int, default = 150, help = "training epochs")
+parser.add_argument('--train_epoch', type = int, default = 200, help = "training epochs")
 parser.add_argument('--lamb', type = float, default = 10, help = "lambada")
 opt = parser.parse_args()
 
@@ -47,8 +53,8 @@ def EncodingOnehot(target, nclasses):
 
 
 #dataloader
-TRAIN_DIR = 'train.list'
-TEST_DIR = 'test.list'
+TRAIN_DIR = 'Retrieval_hmdb_TrainSplit.list'
+TEST_DIR = 'Retrieval_hmdb_TestSplit.list'
 nclasses = 51
 
 
@@ -58,7 +64,7 @@ test_data = DatasetProcessing(TEST_DIR)
 num_train, num_test = len(train_data) , len(test_data)
 
 train_loader = DataLoader(train_data,batch_size = opt.batch_size, shuffle = True, num_workers = 4)
-test_loader = DataLoader(test_data,batch_size = opt.batch_size, shuffle = False, num_workers = 4)
+test_loader = DataLoader(test_data,batch_size = opt.batch_size, shuffle = False, num_workers = 1)
 
 
 train_labels = LoadLabel(TRAIN_DIR)
@@ -79,7 +85,7 @@ D.cuda()
 H.cuda()
 
 
-#loss 
+#loss
 criterionGAN = GANLoss()
 criterionL1 = nn.L1Loss()
 criterionGAN = criterionGAN.cuda()
@@ -92,28 +98,43 @@ G_optimizer = optim.Adam(G.parameters(), lr = opt.lrG, betas = (opt.beta1,opt.be
 D_optimizer = optim.Adam(D.parameters(), lr = opt.lrD, betas = (opt.beta1,opt.beta2))
 H_optimizer = optim.Adam(H.parameters(), lr = opt.lrH, betas = (opt.beta1,opt.beta2))
 
+#H_optimizer = optim.SGD(H.parameters(), lr = opt.lrH, momentum = 0.9)
 # training
 
 print("###training start~~~~")
 
 # initialize the B and H
-B = torch.sign(torch.randn(num_train, opt.bit))
-H_ = torch.zeros(num_train,opt.bit)
+#B = torch.sign(torch.randn(num_train, opt.bit))
 
+B = scio.loadmat('B_init.mat')['B']
+B = torch.FloatTensor(B)
+
+H_ = torch.zeros(num_train,opt.bit)
+F_ = torch.zeros(num_train,4096)
 max_map = 0
 itr = 0
-file = open(str(opt.lrG)+'_' + str(opt.lrD)+'_' + str(opt.lrH)+'_' + str(opt.bit) + '.log','a')
-for epoch in range(opt.train_epoch):
-    # adjust the lr 
-    H_optimizer.param_groups[0]['lr'] = opt.lrH*(0.1**(epoch//70))
+#file = open(str(opt.lrG)+'_' + str(opt.lrD)+'_' + str(opt.lrH)+'_' + str(opt.bit) + '.log','a')
 
+scheduler = lr_scheduler.StepLR(H_optimizer, step_size=120, gamma=0.1)
+
+scheduler1 = lr_scheduler.StepLR(G_optimizer, step_size=20, gamma=0.1)
+for epoch in range(opt.train_epoch):
+    # adjust the lr
+
+    # H_optimizer.param_groups[0]['lr'] = opt.lrH*((epoch//150))
+    # if epoch > 150:
+    #      G_optimizer.param_groups[0]['lr'] = 0
+    #      D_optimizer.param_groups[0]['lr'] = 0
     # E step
-    temp1 = Y.t().mm(Y) +torch.eye(nclasses)
-    temp1 = temp1.inverse()
-    temp1 = temp1.mm(Y.t())
-    E = temp1.mm(B)
+    scheduler.step()
+    #scheduler1.step()
+    if epoch < 15:
+        temp1 = Y.t().mm(Y) +1*torch.eye(nclasses)
+        temp1 = temp1.inverse()
+        temp1 = temp1.mm(Y.t())
+        E = temp1.mm(B)
     #print(D)
-    # B step 
+    # B step
     B = torch.sign(Y.mm(E) + 1e-5 * H_)
 
     G.train()
@@ -126,6 +147,8 @@ for epoch in range(opt.train_epoch):
         label = batch[2]
         batch_ind = batch[3]
 
+        ll = label
+
         ff, pf = Variable(ff.cuda()), Variable(pf.cuda())
         label = EncodingOnehot(label, nclasses)
         #print(label)
@@ -134,28 +157,40 @@ for epoch in range(opt.train_epoch):
         # generate partial feature to full feature
         #print(pf.size())
         #print(label.size())
-        pf_cat = torch.cat((pf,label),2)
+        #pf_cat = torch.cat((pf,label),2)
         #print(pf_cat)
 
-        fakef  = G(pf_cat)
+        pf = pf.unsqueeze(1)
+
+        uf = torch.randn(pf.size())
+
+        uf = uf / uf.pow(2).sum(dim=2).unsqueeze(1)
+        
+        uf = uf.cuda()
+        
+        fakef  = G(pf, uf)
+     
+        a = fakef.data.squeeze()
+        F_[batch_ind,:] = a.cpu()
         ############################
         # (1) Update D network: maximize log(D(x,y)) + log(1 - D(x,G(x)))
         ###########################
         # train generator D
         D_optimizer.zero_grad()
         # train with fake
-        fake_f_cat = torch.cat((fakef,label),2)
-        # bs * 2 * 4096 
-        pred_fake = D.forward(fake_f_cat.detach())
+        #fake_f_cat = torch.cat((fakef,label),2)
+        
+        # bs * 2 * 4096
+        pred_fake = D.forward(fakef.detach())
         # bs * 2 * 64
         loss_d_fake = criterionGAN(pred_fake, False)
         # train with real
-        real_ab = torch.cat((pf,label),2)
+        #real_ab = torch.cat((pf,label),2)
         # bs * 2 * 4096
-        pred_real = D.forward(real_ab)
+        pred_real = D.forward(ff)
         # bs * 2 * 64
         loss_d_real = criterionGAN(pred_real, True)
-        
+
         # Combined loss
         loss_d = (loss_d_fake + loss_d_real) * 0.5
 
@@ -169,40 +204,58 @@ for epoch in range(opt.train_epoch):
 
         G_optimizer.zero_grad()
          # First, G(A) should fake the discriminator
-        fake_ab = torch.cat((fakef,label),2)
-        
-        pred_fake = D.forward(fake_ab)
+        #fake_ab = torch.cat((fakef,label),2)
+
+        pred_fake = D.forward(fakef)
         loss_g_gan = criterionGAN(pred_fake, True)
          # Second, G(A) = B
-        loss_g_l1 = criterionL1(fakef, ff) * opt.lamb
-        
+        loss_g_l1 = criterionL1(fakef, ff) * opt.lamb * 2
+
         loss_g = loss_g_gan + loss_g_l1
-        
+
         loss_g.backward()
         G_optimizer.step()
 
         H_optimizer.zero_grad()
-        cat = torch.zeros([pf.size()[0],1,nclasses])
-        cat = Variable(cat.cuda())
-        pf_cat_ = torch.cat((pf,cat),2)
-        fakef = G(pf_cat_)
+        #cat = torch.zeros([pf.size()[0],1,nclasses])
+        #cat = Variable(cat.cuda())
+        #pf_cat_ = torch.cat((pf,cat),2)
+
+        uf = torch.randn(pf.size())
+
+        uf = uf / uf.pow(2).sum(dim=2).unsqueeze(1)
+        
+        uf = uf.cuda()
+        
+        fakef  = G(pf, uf)
+
+        #H_fake = H(fakef)
         H_fake = H(fakef)
+        
         H_real = H(ff)
-        temp = torch.zeros(H_real.data.size())
+        temp = torch.zeros(H_fake.data.size())
+        regterm4 = 0.0
         for i , ind in enumerate(batch_ind):
             temp[i, :] = B[ind, :]
-            H_[ind, :] = H_real.data[i]
+            H_[ind, :] =H_real.data[i]
+            # k = i
+            # while(k == i):
+            #     p = np.random.randint(len(batch_ind))
+            #     k = p
+            # if ll[i] == ll[k]:
+            #     regterm4 += ((H_real[i] - H_real[k]).pow(2).sum()+ (H_fake[i] - H_fake[k]).pow(2).sum())
+            
         temp = Variable(temp.cuda())
         regterm1 = (temp - H_fake).pow(2).sum()
         regterm2 = (temp - H_real).pow(2).sum()
         regterm3 = (H_real - H_fake).pow(2).sum()
-        
-        H_loss = (regterm1 +regterm2 + regterm3)/opt.batch_size
-        
+
+        H_loss = (regterm1 +regterm2 + regterm3 )/H_real.size()[0]
+        #H_loss = (regterm1)/opt.batch_size 
         H_loss.backward()
         H_optimizer.step()
 
-        
+
         print("===> Epoch[{}]({}/{}): Loss_D: {:.7f} Loss_G: {:.4f} Loss_H: {:.4f}".format(
             epoch, itr, len(train_loader)*opt.batch_size, loss_d.data[0], loss_g.data[0],H_loss.data[0]))
         itr+=1
@@ -211,36 +264,79 @@ for epoch in range(opt.train_epoch):
     G.eval()
     H.eval()
     T = np.zeros([num_test,opt.bit],dtype = np.float32)
+    FF = np.zeros([num_test,4096],dtype = np.float32)
+
+
+
+    H_B = np.sign(H_.cpu().numpy())
+    # knn = neighbors.KNeighborsClassifier()
+    # Label = train_labels.numpy()
+    # knn.fit(H_B,Label)
+
+    # F_B = F_.cpu().numpy()
+    # clf = svm.SVC()
+    # stime = time.time()
+    # clf.fit(F_B, train_labels.numpy())
+    # etime = time.time()
+    
+    t = 0.0
+    s = 0.0
     for iter, batch in enumerate(test_loader, 0):
         ff = batch[0]
         pf = batch[1]
         label = batch[2]
         batch_ind = batch[3]
-        cat = torch.zeros([pf.size()[0],1,nclasses])
-        cat = Variable(cat.cuda())
-        pf = Variable(pf.cuda(),volatile = True)
-        pf_cat_ = torch.cat((pf,cat),2)
-        #ff = Variable(ff.cuda(),volatile = True)
+        # cat = torch.zeros([pf.size()[0],1,nclasses])
+        # cat = Variable(cat.cuda())
+        # pf = Variable(pf.cuda())
+        # pf_cat_ = torch.cat((pf,cat),2)
+
+
+        pf = pf.unsqueeze(1)
         
-        fakef = G(pf_cat_)
-        H_fake = H(fakef)
+        
+        uf = torch.randn(pf.size())
+
+        uf = uf / uf.pow(2).sum(dim=2).unsqueeze(1)
+        
+        uf = uf.cuda()
+        pf = pf.cuda()
+        
+        #ff = Variable(ff.cuda(),volatile = True)
+        with torch.no_grad():
+            fakef  = G(pf, uf)
+            H_fake = H(fakef)
+            
         H_fake = H_fake.squeeze()
         T[batch_ind.numpy(),:] = torch.sign(H_fake.cpu().data).numpy()
+    #     FF[batch_ind.numpy(),:] = fakef.cpu().data.numpy()
+    #     predict = knn.predict(T[batch_ind.numpy(),:].reshape(1,-1))
+    #     #svm_predict = clf.predict(FF[batch_ind.numpy(),:].reshape(1,-1))
+    #     if predict == label:
+    #         t+=1
+    #     # if svm_predict == label:
+    #     #     s+=1
+    #     #print(t,s)
+    # # here map is acc
 
-    # map
-    H_B = np.sign(H_.cpu().numpy())
+    # knn_map = (t / float(len(test_loader)))
+    #svm_map = (s / float(len(test_loader)))
     map = CalcHR.CalcMap(T,H_B,test_labels_onehot.numpy(),train_labels_onehot.numpy())
     print('####################################')
+#    print('knn_map:',knn_map)
     print('map:',map)
-    map = round(map,5)
-    file.write(str(map) +'\n')
-    print('####################################')
+    #print('svm_map:',svm_map)
+    #map = round(map,5)
+    
     if map > max_map:
         max_map = map
         np.save(str(opt.bit)+"H_B.npy",H_B)
         np.save(str(opt.bit)+'test.npy',T)
         np.save('train_label.npy',train_labels_onehot.numpy())
         np.save('test_label.npy',test_labels_onehot.numpy())
+        torch.save(G,'./G3_models.pt')
+        torch.save(H,'./H3_models.pt')
+
 
 
 

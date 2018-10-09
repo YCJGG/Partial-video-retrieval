@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from torch.autograd import Variable
-
+import pdb
 
 class C3D(nn.Module):
     """
@@ -38,7 +38,7 @@ class C3D(nn.Module):
         self.dropout = nn.Dropout(p=0.5)
 
         self.relu = nn.ReLU()
-        self.softmax = nn.Softmax()
+        self.softmax = nn.Softmax(dim = 1)
 
     def forward(self, x):
 
@@ -66,14 +66,15 @@ class C3D(nn.Module):
 
         h = self.dropout(h)
         h = self.relu(self.fc7(h))
-        
+
         h = self.dropout(h)
 
         logits = self.fc8(h)
-        #probs = self.softmax(logits)
+        #print(logits.size())
+        probs = self.softmax(logits)
 
         return  logits, features
-
+        #return h
 
 
 class Generator(nn.Module):
@@ -81,38 +82,89 @@ class Generator(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Generator, self).__init__()
         self.map1 = nn.Linear(input_size,hidden_size)
-        self.map2 = nn.Linear(hidden_size,hidden_size)
+
+        self.map2 = nn.Linear(input_size, hidden_size)
+      
         self.map3 = nn.Linear(hidden_size,output_size)
-    
-    def forward(self, input):
-        x = F.elu(self.map1(input))
-        x = F.sigmoid(self.map2(x))
-        return self.map3(x)
+        
+    def forward(self, input1, input2):
+        #x = input
+        #x = self.map1(input)
+        x1 = F.elu(self.map1(input1))
+        x2 = F.elu(self.map2(input2))
+        x = (x1 + x2) / 2
+        #x = F.sigmoid(self.map2(x))
+        return  self.map3(x)
+
+class Generator1(nn.Module):
+    # initializers
+    def __init__(self, input_size, hidden_size, output_size):
+        super(Generator1, self).__init__()
+        self.map1 = nn.Linear(input_size,hidden_size)
+
+        #self.map2 = nn.Linear(input_size, hidden_size)
+      
+        self.map3 = nn.Linear(hidden_size,output_size)
+        
+    def forward(self, input1):
+        #x = input
+        #x = self.map1(input)
+        x1 = F.elu(self.map1(input1))
+        #x2 = F.elu(self.map2(input2))
+        #x = (x1 + x2) / 2
+        #x = F.sigmoid(self.map2(x))
+        return  self.map3(x1)
+
+
+
+
 
 class Discriminator(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Discriminator, self).__init__()
         self.map1 = nn.Linear(input_size, hidden_size)
-        self.map2 = nn.Linear(hidden_size, hidden_size)
         self.map3 = nn.Linear(hidden_size, output_size)
+       
 
     def forward(self, x):
+        
         x = F.elu(self.map1(x))
-        x = F.elu(self.map2(x))
+        
         return F.sigmoid(self.map3(x))
+
+class Discriminator1(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super(Discriminator1, self).__init__()
+        self.map1 = nn.Linear(input_size, hidden_size)
+        
+        self.map3 = nn.Linear(hidden_size, output_size)
+       
+        self.map2 = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        
+        x = F.elu(self.map1(x))
+        
+        h = self.map2(x)
+        return F.sigmoid(self.map3(x)), h
+
+
 
 
 class Hashnet(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Hashnet, self).__init__()
-        self.map1 = nn.Linear(input_size, hidden_size)
-        self.map2 = nn.Linear(hidden_size, hidden_size)
-        self.map3 = nn.Linear(hidden_size, output_size)
-
+        self.map1 = nn.Linear(input_size, output_size)
+        #self.map2 = nn.Linear(hidden_size, hidden_size//4)
+        #self.map3 = nn.Linear(hidden_size//4, output_size)
+        #self.fc = nn.Linear(output_size, 51)
+        #self.softmax = nn.Softmax(dim = 1)
     def forward(self, x):
-        x = F.elu(self.map1(x))
-        x = F.elu(self.map2(x))
-        return self.map3(x)
+        #x = F.elu(self.map1(x))
+        #x = F.elu(self.map2(x))
+        x =  self.map1(x)
+        return x
+        #return F.tanh(x)
 
 class GANLoss(nn.Module):
     def __init__(self, use_lsgan=True, target_real_label=1.0, target_fake_label=0.0,

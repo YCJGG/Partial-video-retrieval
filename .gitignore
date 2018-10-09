@@ -2,3 +2,6 @@
 *.avi
 *.rar
 *.jpg
+*.npy
+*.mat
+*.pt

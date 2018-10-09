@@ -15,7 +15,7 @@ import time
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--batch_size', type = int, default= 1, help = "batch size")
+parser.add_argument('--batch_size', type = int, default= 32, help = "batch size")
 parser.add_argument('--g_input_size', type = int, default= 4096+51, help = "input size of generator")
 parser.add_argument('--g_hidden_size', type = int, default= 4096*2, help = "hidden size of generator")
 parser.add_argument('--g_output_size', type = int, default= 4096, help = "output size of generator")
@@ -24,10 +24,10 @@ parser.add_argument('--d_hidden_size', type = int, default= 1024, help = "hidden
 parser.add_argument('--d_output_size', type = int, default= 64 , help = "output size of discriminator")
 parser.add_argument('--h_input_size', type = int, default= 4096, help = "input size of Hashnet")
 parser.add_argument('--h_hidden_size', type = int, default= 1024, help = "hidden size of Hashnet")
-parser.add_argument('--lrC', type = float, default = 3e-5, help = "learning rate of c3d" )
+parser.add_argument('--lrC', type = float, default = 1e-5, help = "learning rate of c3d" )
 parser.add_argument('--beta1', type = float, default = 0.5, help = "beta1 for Adam optimizer" )
 parser.add_argument('--beta2', type = float, default = 0.999, help = "beta2 for Adam optimizer" )
-parser.add_argument('--train_epoch', type = int, default = 30, help = "training epochs")
+parser.add_argument('--train_epoch', type = int, default = 50, help = "training epochs")
 parser.add_argument('--lamb', type = float, default = 10, help = "lambada")
 opt = parser.parse_args()
 
@@ -57,7 +57,7 @@ test_data = DatasetReader(TEST_DIR)
 num_train, num_test = len(train_data) , len(test_data)
 
 train_loader = DataLoader(train_data,batch_size = opt.batch_size, shuffle = True, num_workers = 1)
-test_loader = DataLoader(test_data,batch_size = opt.batch_size, shuffle = False, num_workers = 1)
+test_loader = DataLoader(test_data,batch_size = opt.batch_size, shuffle = False, num_workers = 1)	##### NOTE batch size is 1 ####
 
 
 train_labels = LoadLabel(TRAIN_DIR)
@@ -102,7 +102,7 @@ criterionL1 = criterionL1.cuda()
 
 
 # Adam optimizer
-c3d_optimizer = optim.Adam(c3d.parameters(), lr = opt.lrC, betas = (opt.beta1,opt.beta2))
+c3d_optimizer = optim.SGD(c3d.parameters(), lr = opt.lrC, momentum=0.9)
 # training
 
 print("###training start~~~~")
@@ -112,17 +112,18 @@ acc_ = 0.0
 itr = 0
 file = open( str(opt.lrC) + '.log','a')
 
-scheduler = lr_scheduler.StepLR(c3d_optimizer, step_size=20, gamma=0.1)
+scheduler = lr_scheduler.StepLR(c3d_optimizer, step_size=30, gamma=0.1)
 for epoch in range(opt.train_epoch):
-    #c3d.train()
+    c3d.train()
     running_loss = 0.0
     running_corrects = 0.0
     scheduler.step()
     s_time = time.time()
     #F step
     for iteration, batch in enumerate(train_loader, 0):
-        c3d.train()
+    #    c3d.train()
         frame_clip = batch[0]
+        print(frame_clip.size())
         #pf = batch[1]
         label_ = batch[1]
         batch_ind = batch[2]

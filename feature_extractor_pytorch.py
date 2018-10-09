@@ -51,59 +51,67 @@ TRAIN_DIR = './list/train.list'
 TEST_DIR = './list/test.list'
 ALL_DIR = './list/image.list'
 nclasses = 51
-if not os.path.exists('./partial_features/'):
-    os.mkdir('./partial_features/')
-if not os.path.exists('./full_features/'):
-    os.mkdir('./full_features/')
+# if not os.path.exists('./partial_features/'):
+#     os.mkdir('./partial_features/')
+# if not os.path.exists('./full_features/'):
+#     os.mkdir('./full_features/')
 # train_data = DatasetReader(TRAIN_DIR)
 # test_data = DatasetReader(TEST_DIR)
-all_data = DatasetReader(ALL_DIR)
+all_data = DatasetReader(TEST_DIR)
 
 #num_train, num_test = len(train_data) , len(test_data)
 num_data  = len(all_data)
 
 #train_loader = DataLoader(train_data,batch_size = opt.batch_size, shuffle = True, num_workers = 4)
-all_loader = DataLoader(all_data,batch_size = opt.batch_size, shuffle = False, num_workers = 4)
+all_loader = DataLoader(all_data,batch_size = opt.batch_size, shuffle = False, num_workers = 1)
 
 
-all_labels = LoadLabel(ALL_DIR)
+all_labels = LoadLabel(TRAIN_DIR)
 all_labels_onehot = EncodingOnehot(all_labels, nclasses)
-#test_labels = LoadLabel(TEST_DIR)
-#test_labels_onehot = EncodingOnehot(test_labels, nclasses)
-#Y = train_labels_onehot
 
+
+####### fine tune models
+
+# c3d = networks.C3D()
+
+# c3d_dict = c3d.state_dict()
+
+# #c3d_pretrain = torch.load('./checkpoints/0.000125-0.48366models.pt')
+# c3d_pretrain = torch.load('./c3d.pickle')
+
+# c3d_pretrain_dict = c3d_pretrain.state_dict()
+# #c3d_pretrain_dict = {k[7:]:v for k,v in c3d_pretrain_dict.items() if k[7:] in c3d_dict}
+# c3d_pretrain_dict = {k:v for k,v in c3d_pretrain_dict.items() if k in c3d_dict}
+# c3d.load_state_dict(c3d_pretrain_dict)
+# #c3d = nn.DataParallel(c3d)
+# c3d.fc8 = nn.Linear(4096,51)
+####################################
+
+#origin models
+#####################################
 
 c3d = networks.C3D()
-c3d.fc8 = nn.Linear(4096,51)
-# #c3d.load_state_dict(torch.load('./hmdb_model.pt'))
-
 c3d_dict = c3d.state_dict()
-# pretrained_dict = torch.load('./hmdb_model.pt')
-# pretrained_dict = {k[15:] : v for k, v in pretrained_dict.items() if  k[15:] in c3d_dict}
+pretrained_dict = torch.load('./c3d.pickle')
+pretrained_dict = {k : v for k, v in pretrained_dict.items() if  k in c3d_dict}
+c3d_dict.update(pretrained_dict)
+c3d.load_state_dict(c3d_dict)
+c3d.fc8 = nn.Linear(4096,51)
+if not os.path.exists('./Rpartial_features'):
+        os.mkdir('./Rpartial_features')
+if not os.path.exists('./Rfull_features'):
+    os.mkdir('./Rfull_features')
 
-# c3d_dict.update(pretrained_dict)
-# #print(c3d.state_dict().keys())
-# c3d.load_state_dict(c3d_dict)
-# # c3d.fc8 = nn.Linear(4096,51)
-c3d_pretrain = torch.load('./checkpoints/3e-05-0.70317models.pt')
-c3d_pretrain_dict = c3d_pretrain.state_dict()
-c3d_pretrain_dict = {k[7:]:v for k,v in c3d_pretrain_dict.items() if k[7:] in c3d_dict}
-c3d.load_state_dict(c3d_pretrain_dict)
-#print(c3d.state_dict()['fc8.bias'])
-#c3d = nn.DataParallel(c3d)
+
+
+#######################################
 c3d.cuda()
-#torch.save(c3d.state_dict(),'./hmdb_model.pt')
-#loss 
-criterionGAN = GANLoss()
-criterionL1 = nn.L1Loss()
-criterion = nn.CrossEntropyLoss().cuda()
-criterionGAN = criterionGAN.cuda()
-criterionL1 = criterionL1.cuda()
+
 
 
 def normalize(v):
     norm = np.linalg.norm(v)
-    if norm == 0: 
+    if norm == 0:
        return v
     return v / norm
 # Adam optimizer
@@ -115,7 +123,7 @@ print("###extracting start~~~~")
 
 #s_time = time.time()
 c3d.eval()
-file = open('./features.list','a')
+file = open('./Retrieval_hmdb_TestSplit.list','a')
 for batch in all_loader:
     frame_clip = batch[0]
     #pf = batch[1]
@@ -127,41 +135,64 @@ for batch in all_loader:
     frame_clip = Variable(frame_clip.cuda())
     label = Variable(label.cuda())
     frames = Variable(frames.cuda())
-    label_onehot = EncodingOnehot(label_, nclasses)
-    #print(label)
-    label_onehot = Variable(label_onehot.cuda())
-    label_onehot = torch.unsqueeze(label_onehot,1)
+    frame_clip = frame_clip.squeeze()
+
     with torch.no_grad():
         _,pf = c3d(frame_clip)
         frames = torch.squeeze(frames)
 
-    if len(frames.size())<=4:
-        frames = torch.unsqueeze(frames,0)
-    with torch.no_grad():
-        _,ff = c3d(frames)
-        ff = torch.mean(ff, dim = 0)
+        if len(frames.size())<=4:
+            frames = torch.unsqueeze(frames,0)
+    #with torch.no_grad():
+        print(frames.size(),name[0].split('/HMDB51/')[1])
+        if frames.size()[0] <= 70:
+            _,ff = c3d(frames)
+            ff = torch.mean(ff, dim = 0)
             #ff = ff.view(1,1,-1)
+        elif frames.size()[0] > 70 and frames.size()[0] < 120 :
+            _, ff1 = c3d(frames[0:60,:,:,:,:])
+            _, ff2 = c3d(frames[60:,:,:,:,:])
+            ff = torch.cat((ff1,ff2),0)
+            ff = torch.mean(ff, dim = 0)
+        elif frames.size()[0] > 120:
+            _, ff1 = c3d(frames[0:60,:,:,:,:])
+            _, ff2 = c3d(frames[60:120,:,:,:,:])
+            _, ff3 = c3d(frames[120:,:,:,:,:])
+            ff = torch.cat((ff1,ff2),0)
+            ff = torch.cat((ff,ff3),0)
+            ff = torch.mean(ff, dim = 0)
     ff = ff.view(1,-1)
     pf = pf.cpu().numpy()
-    ff = ff.cpu().numpy()
-    label = label_.cpu().numpy()
 
-    partial_feature = normalize(pf) 
+    ff = ff.cpu().numpy()
+    label = label_.cpu().numpy()[0][0]
+
     full_feature = normalize(ff)
-    path = name[0].split('//')[1]
+    path = name[0].split('/HMDB51//')[1]
     cate_name = path.split('/')[0]
     file_name =  path.split('/')[1]
-    if not os.path.exists('./partial_features/'+cate_name):
-        os.mkdir('./partial_features/'+cate_name)
-    if not os.path.exists('./full_features/'+cate_name):
-        os.mkdir('./full_features/'+cate_name)
-    np.save('./partial_features/'+path+'.npy', partial_feature)
-    np.save('./full_features/'+path+'.npy', full_feature)
-    file.write('./full_features/'+path+'.npy'+' '+'./partial_features/'+path+'.npy'+' '+str(label)+'\n')
+
+
+    print('./Rpartial_features/'+cate_name)
+
+    if not os.path.exists('./Rpartial_features/'+cate_name):
+        
+        os.mkdir('./Rpartial_features/'+cate_name)
+    if not os.path.exists('./Rfull_features/'+cate_name):
+        os.mkdir('./Rfull_features/'+cate_name)
+
+    for index in range(10):
+
+        partial_feature = normalize(pf[index])
+
+        np.save('./Rpartial_features/'+path+str(index)+'.npy', partial_feature)
+        np.save('./Rfull_features/'+path+str(index)+'.npy', full_feature)
+
+        file.write('./Rfull_features/'+path+str(index)+'.npy'+' '+'./Rpartial_features/'+path+str(index)+'.npy'+' '+str(label)+'\n')
 
     #print(partial_feature)
     #print(full_feature.shape)
-    
 
 
-    
+
+
