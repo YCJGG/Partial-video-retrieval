@@ -58,6 +58,9 @@ class C3D(nn.Module):
 
         h = self.relu(self.conv5a(h))
         h = self.relu(self.conv5b(h))
+
+        v = h
+
         h = self.pool5(h)
 
         h = h.view(-1, 8192)
@@ -84,9 +87,9 @@ class Generator(nn.Module):
         self.map1 = nn.Linear(input_size,hidden_size)
 
         self.map2 = nn.Linear(input_size, hidden_size)
-      
+
         self.map3 = nn.Linear(hidden_size,output_size)
-        
+
     def forward(self, input1, input2):
         #x = input
         #x = self.map1(input)
@@ -103,9 +106,9 @@ class Generator1(nn.Module):
         self.map1 = nn.Linear(input_size,hidden_size)
 
         #self.map2 = nn.Linear(input_size, hidden_size)
-      
+
         self.map3 = nn.Linear(hidden_size,output_size)
-        
+
     def forward(self, input1):
         #x = input
         #x = self.map1(input)
@@ -124,31 +127,63 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         self.map1 = nn.Linear(input_size, hidden_size)
         self.map3 = nn.Linear(hidden_size, output_size)
-       
+
 
     def forward(self, x):
-        
+
         x = F.elu(self.map1(x))
-        
+
         return F.sigmoid(self.map3(x))
 
 class Discriminator1(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
+    def __init__(self, input_size, hidden_size, nclasses,output_size,bit):
         super(Discriminator1, self).__init__()
         self.map1 = nn.Linear(input_size, hidden_size)
-        
+
         self.map3 = nn.Linear(hidden_size, output_size)
-       
-        self.map2 = nn.Linear(hidden_size, output_size)
 
+        self.map2 = nn.Linear(hidden_size, bit)
+
+        self.fc_aux = nn.Linear(hidden_size, nclasses)
+        self.softmax = nn.Softmax()
     def forward(self, x):
-        
+
         x = F.elu(self.map1(x))
-        
+
         h = self.map2(x)
-        return F.sigmoid(self.map3(x)), h
 
+        fc_aux = self.fc_aux(x)
+        #print(fc_aux.shape)
+        fc_aux = fc_aux.squeeze()
+        
+        classes = self.softmax(fc_aux)
+        #print(classes.shape)
+        return F.sigmoid(self.map3(x)), h, classes
 
+class Discriminator2(nn.Module):
+    def __init__(self, input_size, hidden_size, nclasses,output_size,bit):
+        super(Discriminator2, self).__init__()
+        self.map1 = nn.Linear(input_size, hidden_size)
+
+        self.map3 = nn.Linear(hidden_size, output_size)
+
+        self.map2 = nn.Linear(hidden_size, bit)
+
+        self.fc_aux = nn.Linear(bit, nclasses)
+        self.softmax = nn.Softmax()
+    def forward(self, x):
+
+        x = F.elu(self.map1(x))
+
+        h = self.map2(x)
+
+        fc_aux = self.fc_aux(h)
+        #print(fc_aux.shape)
+        fc_aux = fc_aux.squeeze()
+        
+        classes = self.softmax(fc_aux)
+        #print(classes.shape)
+        return F.sigmoid(self.map3(x)), h, classes
 
 
 class Hashnet(nn.Module):

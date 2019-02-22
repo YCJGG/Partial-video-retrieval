@@ -47,17 +47,17 @@ def EncodingOnehot(target, nclasses):
 
 
 #dataloader
-TRAIN_DIR = './list/train.list'
+TRAIN_DIR = './list/train_b.list'
 TEST_DIR = './list/test.list'
 ALL_DIR = './list/image.list'
-nclasses = 51
+nclasses = 101
 # if not os.path.exists('./partial_features/'):
 #     os.mkdir('./partial_features/')
 # if not os.path.exists('./full_features/'):
 #     os.mkdir('./full_features/')
 # train_data = DatasetReader(TRAIN_DIR)
 # test_data = DatasetReader(TEST_DIR)
-all_data = DatasetReader(TEST_DIR)
+all_data = DatasetReader(TRAIN_DIR)
 
 #num_train, num_test = len(train_data) , len(test_data)
 num_data  = len(all_data)
@@ -97,10 +97,10 @@ pretrained_dict = {k : v for k, v in pretrained_dict.items() if  k in c3d_dict}
 c3d_dict.update(pretrained_dict)
 c3d.load_state_dict(c3d_dict)
 c3d.fc8 = nn.Linear(4096,51)
-if not os.path.exists('./Rpartial_features'):
-        os.mkdir('./Rpartial_features')
-if not os.path.exists('./Rfull_features'):
-    os.mkdir('./Rfull_features')
+if not os.path.exists('./UCFpartial_features'):
+        os.mkdir('./UCFpartial_features')
+if not os.path.exists('./UCFfull_features'):
+    os.mkdir('./UCFfull_features')
 
 
 
@@ -123,7 +123,7 @@ print("###extracting start~~~~")
 
 #s_time = time.time()
 c3d.eval()
-file = open('./Retrieval_hmdb_TestSplit.list','a')
+file = open('./UCF_Train_Retrieval.list','a')
 for batch in all_loader:
     frame_clip = batch[0]
     #pf = batch[1]
@@ -144,22 +144,31 @@ for batch in all_loader:
         if len(frames.size())<=4:
             frames = torch.unsqueeze(frames,0)
     #with torch.no_grad():
-        print(frames.size(),name[0].split('/HMDB51/')[1])
+        print(frames.size(),name[0].split('/UCF-101//')[1])
         if frames.size()[0] <= 70:
             _,ff = c3d(frames)
             ff = torch.mean(ff, dim = 0)
             #ff = ff.view(1,1,-1)
-        elif frames.size()[0] > 70 and frames.size()[0] < 120 :
+        elif frames.size()[0] > 70 and frames.size()[0] <= 120 :
             _, ff1 = c3d(frames[0:60,:,:,:,:])
             _, ff2 = c3d(frames[60:,:,:,:,:])
             ff = torch.cat((ff1,ff2),0)
             ff = torch.mean(ff, dim = 0)
-        elif frames.size()[0] > 120:
+        elif frames.size()[0] > 120 and frames.size()[0] <= 170 :
             _, ff1 = c3d(frames[0:60,:,:,:,:])
             _, ff2 = c3d(frames[60:120,:,:,:,:])
             _, ff3 = c3d(frames[120:,:,:,:,:])
             ff = torch.cat((ff1,ff2),0)
             ff = torch.cat((ff,ff3),0)
+            ff = torch.mean(ff, dim = 0)
+        elif frames.size()[0] > 170 and frames.size()[0] <= 240 :
+            _, ff1 = c3d(frames[0:60,:,:,:,:])
+            _, ff2 = c3d(frames[60:120,:,:,:,:])
+            _, ff3 = c3d(frames[120:180,:,:,:,:])
+            _, ff4 = c3d(frames[180:,:,:,:,:])
+            ff = torch.cat((ff1,ff2),0)
+            ff = torch.cat((ff,ff3),0)
+            ff = torch.cat((ff,ff4),0)
             ff = torch.mean(ff, dim = 0)
     ff = ff.view(1,-1)
     pf = pf.cpu().numpy()
@@ -168,27 +177,25 @@ for batch in all_loader:
     label = label_.cpu().numpy()[0][0]
 
     full_feature = normalize(ff)
-    path = name[0].split('/HMDB51//')[1]
+    path = name[0].split('/UCF-101//')[1]
     cate_name = path.split('/')[0]
     file_name =  path.split('/')[1]
 
 
-    print('./Rpartial_features/'+cate_name)
+    if not os.path.exists('./UCFpartial_features/'+cate_name):
 
-    if not os.path.exists('./Rpartial_features/'+cate_name):
-        
-        os.mkdir('./Rpartial_features/'+cate_name)
-    if not os.path.exists('./Rfull_features/'+cate_name):
-        os.mkdir('./Rfull_features/'+cate_name)
+        os.mkdir('./UCFpartial_features/'+cate_name)
+    if not os.path.exists('./UCFfull_features/'+cate_name):
+        os.mkdir('./UCFfull_features/'+cate_name)
 
     for index in range(10):
 
         partial_feature = normalize(pf[index])
 
-        np.save('./Rpartial_features/'+path+str(index)+'.npy', partial_feature)
-        np.save('./Rfull_features/'+path+str(index)+'.npy', full_feature)
+        np.save('./UCFpartial_features/'+path+str(index)+'.npy', partial_feature)
+        np.save('./UCFfull_features/'+path+str(index)+'.npy', full_feature)
 
-        file.write('./Rfull_features/'+path+str(index)+'.npy'+' '+'./Rpartial_features/'+path+str(index)+'.npy'+' '+str(label)+'\n')
+        file.write('./UCFfull_features/'+path+str(index)+'.npy'+' '+'./UCFpartial_features/'+path+str(index)+'.npy'+' '+str(label)+'\n')
 
     #print(partial_feature)
     #print(full_feature.shape)

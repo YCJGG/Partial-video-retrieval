@@ -165,11 +165,11 @@ for epoch in range(opt.train_epoch):
         uf = torch.randn(pf.size())
 
         uf = uf / uf.pow(2).sum(dim=2).unsqueeze(1)
-        
+
         uf = uf.cuda()
-        
+
         fakef  = G(pf, uf)
-     
+
         a = fakef.data.squeeze()
         F_[batch_ind,:] = a.cpu()
         ############################
@@ -179,7 +179,7 @@ for epoch in range(opt.train_epoch):
         D_optimizer.zero_grad()
         # train with fake
         #fake_f_cat = torch.cat((fakef,label),2)
-        
+
         # bs * 2 * 4096
         pred_fake = D.forward(fakef.detach())
         # bs * 2 * 64
@@ -224,14 +224,14 @@ for epoch in range(opt.train_epoch):
         uf = torch.randn(pf.size())
 
         uf = uf / uf.pow(2).sum(dim=2).unsqueeze(1)
-        
+
         uf = uf.cuda()
-        
+
         fakef  = G(pf, uf)
 
         #H_fake = H(fakef)
         H_fake = H(fakef)
-        
+
         H_real = H(ff)
         temp = torch.zeros(H_fake.data.size())
         regterm4 = 0.0
@@ -244,14 +244,14 @@ for epoch in range(opt.train_epoch):
             #     k = p
             # if ll[i] == ll[k]:
             #     regterm4 += ((H_real[i] - H_real[k]).pow(2).sum()+ (H_fake[i] - H_fake[k]).pow(2).sum())
-            
+
         temp = Variable(temp.cuda())
         regterm1 = (temp - H_fake).pow(2).sum()
         regterm2 = (temp - H_real).pow(2).sum()
         regterm3 = (H_real - H_fake).pow(2).sum()
 
         H_loss = (regterm1 +regterm2 + regterm3 )/H_real.size()[0]
-        #H_loss = (regterm1)/opt.batch_size 
+        #H_loss = (regterm1)/opt.batch_size
         H_loss.backward()
         H_optimizer.step()
 
@@ -278,7 +278,7 @@ for epoch in range(opt.train_epoch):
     # stime = time.time()
     # clf.fit(F_B, train_labels.numpy())
     # etime = time.time()
-    
+
     t = 0.0
     s = 0.0
     for iter, batch in enumerate(test_loader, 0):
@@ -293,20 +293,20 @@ for epoch in range(opt.train_epoch):
 
 
         pf = pf.unsqueeze(1)
-        
-        
+
+
         uf = torch.randn(pf.size())
 
         uf = uf / uf.pow(2).sum(dim=2).unsqueeze(1)
-        
+
         uf = uf.cuda()
         pf = pf.cuda()
-        
+
         #ff = Variable(ff.cuda(),volatile = True)
         with torch.no_grad():
             fakef  = G(pf, uf)
             H_fake = H(fakef)
-            
+
         H_fake = H_fake.squeeze()
         T[batch_ind.numpy(),:] = torch.sign(H_fake.cpu().data).numpy()
     #     FF[batch_ind.numpy(),:] = fakef.cpu().data.numpy()
@@ -327,7 +327,7 @@ for epoch in range(opt.train_epoch):
     print('map:',map)
     #print('svm_map:',svm_map)
     #map = round(map,5)
-    
+
     if map > max_map:
         max_map = map
         np.save(str(opt.bit)+"H_B.npy",H_B)

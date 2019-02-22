@@ -5,3 +5,6 @@
 *.npy
 *.mat
 *.pt
+*.zip
+*.log
+*.txt
